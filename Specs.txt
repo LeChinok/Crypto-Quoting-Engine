@@ -1,0 +1,86 @@
+Question List
+- What are the possible exchange list? (Huobi and Okex for now?)
+- Can you provide test account on huobi and okex?
+- Flask app or Terminal App? (I guess it should be Flask)
+- For private/public data from exchangers, is it required to be real-time? (socket or polling)
+- What kind of data point does backend support to app? is it socket or RESTful api?
+- 
+- For flexibility of defining algo without depending on developer, what kind of defining form do you want? (As for now, I know simple calculation is okay.)
+
+INTRO: Build quoting engine for futures calendar spreads between 2 crypto exchanges. Quote 4 MARKETS simultaneously, and if a quote is partially or fully filled, then place an opposing market order for the same size in the 2ND_LEG_MARKET.  Log INFO into TimescaleDB, which will be connected to Grafana for user analysis and monitoring.
+
+“MARKET” is defined by exchange, expiration, token, margin_type. 
+EG, the OKEX-March26_2021-ETH-USDT is a single MARKET or the HUOB-June25_2021-BTC-COIN is a single MARKET.
+
+“2nd_LEG_MARKET” is defined as the MARKET of the same exchange, token, and margin_type of the filled MARKET, but with different expiration_code. 
+Eg, if there is a buy fill on the OKEX-March26_2021-ETH-USDT MARKET for a size of $200, then place a market sell order on the OKEX-JUNE25_2021-ETH-USDT MARKET for a size of $200.
+
+“expiration_code” defines a futures market by the expiration notation of “W”, “B”, “Q” or “C” to signify weekly, biweekly, quarterly or bi-quarterly, instead of by the month day year notation. EG, as of today march 3, the march5_2021, march12_2021, march26_2021 and the June25_2021 can be referred to as “W”, “B”, “Q” and “C”, respectively.
+
+“INFO” is any relevant data that needs to be ACCESSED (ie, available in the system and logged) and can be broken into 3 categories: Private, Public, and User_params. This INFO dictates whether we are quoting a bid, an ask, both or neither and what the quoted orders’ price and size are. 
+
+For any single MARKET, the following PRIVATE INFO must be ACCESSED: Equity, Unrealized Pnl, Avail Margin, Used Margin, Order Margin, Margin Ratio, Maintenance Margin Ratio, Margin mode, leverage, Open Positions, and Open Orders.  For any Open order, the following INFO must be accessed: Side (buy or sell), type (open long, close long, open short, close short), size (both in stable coin amount and token amount) and price. For any Open Position, the same INFO as Open Orders must be accessed along with the Average Price, liquidation price and Pnl.
+
+For any single MARKET, the following PUBLIC INFO needs to be ACCESSED: the full orderbook (referred to as “OB”) of bid and ask levels, their prices and volume(in both stable coin amount and token amount).  Multiple orders of the same price need not be distinguished.
+
+A function called “OB_calcs” must exist that takes a MARKET’s OB as an argument and returns various values, eg the best bid price, best ask price and the midprice ([bestbidprice + bestaskprice]/2). These returned values need to be ACCESSED. 
+
+USER-PARAMS tell the system what MARKETS to trade and how to trade them.  USER_PARAMS will include:
+Exch_A and Exch_B (the 2 exchanges we are trading), 
+Exp_1 and Exp_2 (the 2 expirations we are trading), 
+Token (BTC, ETH, XRP……),
+Margin_type (COIN or USD-S, where USD-S refers to stable coin like USDT or USDC)
+Size (trade size in USD-S)
+Min_avail_margin (the minimum margin neccessary needed to open or add to a position)
+Charge (this will dictate the pricing of our quote).  
+More USER_PARAMS will be needed but these should be sufficient to get a working prototype. 
+
+A function called “quote_prices” must exist that takes in PUBLIC INFO, PRIVATE INFO and USER_PARAMS as arguments and returns quote_bid_price and quote_ask_price for each of the 4 MARKETS
+
+Here is an example of putting everything together:
+https://us04web.zoom.us/j/72800435853?pwd=UDJndHpYQXRuMExZZThDZHlNdkV0Zz09
+USER_PARAMS
+Exch_a = ‘huobi’
+Exch_b = ‘okex’
+Exp_1 = ‘Q’ 
+Exp_2 = ‘C’
+Token = ‘BTC’ 
+Margin type =  ‘COIN’
+Size = 500
+Charge = 1% 
+Min_avail_margin = 1000
+
+So the 4 markets we want to trade are huobi btc-coin_margined march and June futures and okex btc-coin_margined march and June futures. 
+
+PUBLIC_INFO
+Let’s say the mid_prices of those 4 Markets are as follows:
+HUOBI BTC-COIN MARCH  = 51550
+HUOBI BTC-COIN JUNE = 55000
+OKEX BTC-COIN MARCH = 51600
+OKEX BTC-COIN JUNE = 54800
+
+If we were to quote a MARKET off of the MARKET with similar expiration but different exchange, then “quote_prices” function could look like this…
+f(PUBLIC_INFO, PRIVATE_INFO, USER_PARAMS):
+     theoretical price of market-Exch_A-Exp_1 = mid_price of market-Exch_B-Exp_1
+     quote_bid of market-Exch_A-Exp_1 = theoretical price of market-Exch_A-Exp_1*(1-Charge)
+     quote_ask of market-Exch_A-Exp_1 = theoretical price of market-Exch_A-Exp_1*(1+Charge)
+     #theo price of huobi_btc-coin_march future = 51600
+     #quote_bid_price = 51600*.99 = 51084
+     #quote_bid_price = 51600*1.01 = 52116…..  
+     
+     #and do that for all 4 MARKETS
+     Return quote_bid_price and quote_ask_price for the 4 Markets
+
+I left out PRIVATE INFO in the function for simplicity, but eventually would need to ACCESS it for calculations. 
+
+Then assuming that our avail_margin (let’s say we had 5000) for say the MARKET huobi_btc-coin_march future would allow us to both open a buy and sell order without going below the user-defined min_avail_marign of 1000, then we would place a buy order for the MARKET with a size of 500 and a price of 51084 and we would place a sell order for a size of 500 and a price of 52116
+
+USER_PARAMS are static values, but as PUBLIC and PRIVATE INFO change, our quotes be amending accordingly.
+
+
+     
+
+
+              
+
+
